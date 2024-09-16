@@ -215,13 +215,7 @@ def showHostPauseScreen(game_code):
                         game_started = True  # Set game_started to True for the host
                         return
                     else:
-                        # Display a message indicating that at least one client is required
-                        noClientSurf = BASICFONT.render('At least one client is required to start the game.', True, RED)
-                        noClientRect = noClientSurf.get_rect(center=(WINDOWWIDTH / 2, WINDOWHEIGHT / 2 + 100))
-                        DISPLAYSURF.blit(noClientSurf, noClientRect)
-                        # Wait for 2 seconds before clearing the message
-
-
+                        print("No clients connected")
 
         pygame.display.update()
         FPSCLOCK.tick(FPS)
