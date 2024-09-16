@@ -16,6 +16,7 @@ CELLWIDTH = int(WINDOWWIDTH / CELLSIZE)
 CELLHEIGHT = int(WINDOWHEIGHT / CELLSIZE)
 
 #             R    G    B
+YELLOW    = (255, 255,   0)
 WHITE     = (255, 255, 255)
 BLACK     = (  0,   0,   0)
 RED       = (255,   0,   0)
@@ -57,6 +58,7 @@ def runGame():
 
     # Start the apple in a random place.
     apple = getRandomLocation()
+    poisonApple = getRandomLocation()
 
     while True: # main game loop
         for event in pygame.event.get(): # event handling loop
@@ -80,8 +82,12 @@ def runGame():
         for wormBody in wormCoords[1:]:
             if wormBody['x'] == wormCoords[HEAD]['x'] and wormBody['y'] == wormCoords[HEAD]['y']:
                 return # game over
+        
+        # check if worm has eaten the poison apple
+        if wormCoords[HEAD]['x'] == poisonApple['x'] and wormCoords[HEAD]['y'] == poisonApple['y']:
+            return # game over
 
-        # check if worm has eaten an apply
+        # check if worm has eaten an apple
         if wormCoords[HEAD]['x'] == apple['x'] and wormCoords[HEAD]['y'] == apple['y']:
             # don't remove worm's tail segment
             apple = getRandomLocation() # set a new apple somewhere
@@ -102,6 +108,7 @@ def runGame():
         drawGrid()
         drawWorm(wormCoords)
         drawApple(apple)
+        drawPoisonApple(poisonApple)
         drawScore(len(wormCoords) - 3)
         pygame.display.update()
         FPSCLOCK.tick(FPS)
@@ -208,6 +215,11 @@ def drawApple(coord):
     appleRect = pygame.Rect(x, y, CELLSIZE, CELLSIZE)
     pygame.draw.rect(DISPLAYSURF, RED, appleRect)
 
+def drawPoisonApple(coord):
+    x = coord['x'] * CELLSIZE
+    y = coord['y'] * CELLSIZE
+    appleRect = pygame.Rect(x, y, CELLSIZE, CELLSIZE)
+    pygame.draw.rect(DISPLAYSURF, YELLOW, appleRect)
 
 def drawGrid():
     for x in range(0, WINDOWWIDTH, CELLSIZE): # draw vertical lines
