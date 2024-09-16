@@ -10,8 +10,8 @@ HOST = "192.168.0.xxx" # change accordingly
 PORT = 65432
 
 FPS = 10
-WINDOWWIDTH = 640
-WINDOWHEIGHT = 480
+WINDOWWIDTH = 1600
+WINDOWHEIGHT = 900
 CELLSIZE = 20
 assert WINDOWWIDTH % CELLSIZE == 0, "Window width must be a multiple of cell size."
 assert WINDOWHEIGHT % CELLSIZE == 0, "Window height must be a multiple of cell size."
@@ -50,12 +50,13 @@ def main():
 
 
 def runGame():
-    # Set a random start point.
+
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect((HOST, PORT))
+    print(f"Connection established with {HOST}:{PORT}")
+    
     wormCoords = []
     direction = RIGHT
-
-    # Start the apple in a random place.
-    apple = getRandomLocation()
 
     while True: # main game loop
         for event in pygame.event.get(): # event handling loop
@@ -64,38 +65,20 @@ def runGame():
             elif event.type == KEYDOWN:
                 if (event.key == K_LEFT or event.key == K_a) and direction != RIGHT:
                     direction = LEFT
+                    #s.sendall(LEFT.encode())
                 elif (event.key == K_RIGHT or event.key == K_d) and direction != LEFT:
                     direction = RIGHT
+                    #s.sendall(RIGHT.encode())
                 elif (event.key == K_UP or event.key == K_w) and direction != DOWN:
                     direction = UP
+                    #s.sendall(UP.encode())
                 elif (event.key == K_DOWN or event.key == K_s) and direction != UP:
                     direction = DOWN
+                    #s.sendall(DOWN.encode())
+                    print("DOWN".encode())
                 elif event.key == K_ESCAPE:
                     terminate()
-
-        # check if the worm has hit itself or the edge
-        if wormCoords[HEAD]['x'] == -1 or wormCoords[HEAD]['x'] == CELLWIDTH or wormCoords[HEAD]['y'] == -1 or wormCoords[HEAD]['y'] == CELLHEIGHT:
-            return # game over
-        for wormBody in wormCoords[1:]:
-            if wormBody['x'] == wormCoords[HEAD]['x'] and wormBody['y'] == wormCoords[HEAD]['y']:
-                return # game over
-
-        # check if worm has eaten an apply
-        if wormCoords[HEAD]['x'] == apple['x'] and wormCoords[HEAD]['y'] == apple['y']:
-            # don't remove worm's tail segment
-            apple = getRandomLocation() # set a new apple somewhere
-        else:
-            del wormCoords[-1] # remove worm's tail segment
-
-        # move the worm by adding a segment in the direction it is moving
-        if direction == UP:
-            newHead = {'x': wormCoords[HEAD]['x'], 'y': wormCoords[HEAD]['y'] - 1}
-        elif direction == DOWN:
-            newHead = {'x': wormCoords[HEAD]['x'], 'y': wormCoords[HEAD]['y'] + 1}
-        elif direction == LEFT:
-            newHead = {'x': wormCoords[HEAD]['x'] - 1, 'y': wormCoords[HEAD]['y']}
-        elif direction == RIGHT:
-            newHead = {'x': wormCoords[HEAD]['x'] + 1, 'y': wormCoords[HEAD]['y']}
+                    
         wormCoords.insert(0, newHead)
         DISPLAYSURF.fill(BGCOLOR)
         drawGrid()
