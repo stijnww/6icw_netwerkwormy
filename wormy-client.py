@@ -3,10 +3,15 @@
 # http://inventwithpython.com/pygame
 # Released under a "Simplified BSD" license
 import socket
-import random, pygame, sys
+import random
+import pygame
+import sys
 from pygame.locals import *
+import json
+import threading
+import queue
 
-HOST = "192.168.0.xxx" # change accordingly
+HOST = "10.157.0.60" # change accordingly
 PORT = 65432
 
 FPS = 10
@@ -17,6 +22,11 @@ assert WINDOWWIDTH % CELLSIZE == 0, "Window width must be a multiple of cell siz
 assert WINDOWHEIGHT % CELLSIZE == 0, "Window height must be a multiple of cell size."
 CELLWIDTH = int(WINDOWWIDTH / CELLSIZE)
 CELLHEIGHT = int(WINDOWHEIGHT / CELLSIZE)
+
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.connect((HOST, PORT))
+s.settimeout(1.0)  # Set a timeout for socket operations
+print(f"Connection established with {HOST}:{PORT}")
 
 #             R    G    B
 WHITE     = (255, 255, 255)
@@ -46,47 +56,101 @@ def main():
     showStartScreen()
     while True:
         runGame()
-        showGameOverScreen()
-
 
 def runGame():
-
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.connect((HOST, PORT))
-    print(f"Connection established with {HOST}:{PORT}")
     
-    wormCoords = []
+    snakes = []
     direction = RIGHT
+    running = True
 
-    while True: # main game loop
-        for event in pygame.event.get(): # event handling loop
-            if event.type == QUIT:
-                terminate()
-            elif event.type == KEYDOWN:
-                if (event.key == K_LEFT or event.key == K_a) and direction != RIGHT:
-                    direction = LEFT
-                    #s.sendall(LEFT.encode())
-                elif (event.key == K_RIGHT or event.key == K_d) and direction != LEFT:
-                    direction = RIGHT
-                    #s.sendall(RIGHT.encode())
-                elif (event.key == K_UP or event.key == K_w) and direction != DOWN:
-                    direction = UP
-                    #s.sendall(UP.encode())
-                elif (event.key == K_DOWN or event.key == K_s) and direction != UP:
-                    direction = DOWN
-                    #s.sendall(DOWN.encode())
-                    print("DOWN".encode())
-                elif event.key == K_ESCAPE:
+    direction_queue = queue.Queue()
+    update_queue = queue.Queue()
+
+    def send_direction():
+        while running:
+            try:
+                direction = direction_queue.get(timeout=1)
+                message = {
+                    "type": "direction",
+                    "direction": direction
+                }
+                s.sendall(json.dumps(message).encode())
+            except queue.Empty:
+                continue
+
+        def receive_updates():
+            while running:
+                try:
+                    data = s.recv(1024)
+                    if not data:
+                        break
+                    message = json.loads(data.decode())
+                    if message['type'] == 'board_update':
+                        snakes = message['snakes']
+                except socket.timeout:
+                    continue
+                except Exception as e:
+                    print(f"Error: {e}")
+                    break
+
+
+        send_thread = threading.Thread(target=send_direction)
+        receive_thread = threading.Thread(target=receive_updates)
+
+        send_thread.start()
+        receive_thread.start()
+
+        while running:
+            for event in pygame.event.get():  # event handling loop
+                if event.type == pygame.QUIT:
+                    running = False
                     terminate()
-                    
-        wormCoords.insert(0, newHead)
-        DISPLAYSURF.fill(BGCOLOR)
-        drawGrid()
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_LEFT:
+                        direction = LEFT
+                    elif event.key == pygame.K_RIGHT:
+                        direction = RIGHT
+                    elif event.key == pygame.K_UP:
+                        direction = UP
+                    elif event.key == pygame.K_DOWN:
+                        direction = DOWN
+                    direction_queue.put(direction)
+
+            try:
+                snakes = update_queue.get_nowait()
+            except queue.Empty:
+                pass
+            
+        for snake in snakes:
+            wormCoords = snake['coords']
+            drawWorm(wormCoords)
+
+        send_thread.join()
+        receive_thread.join()
+
+def updateBoard(snakes):
+    for snake in snakes:
+        wormCoords = snake['coords']
         drawWorm(wormCoords)
-        drawApple(apple)
-        drawScore(len(wormCoords) - 3)
+    drawApple(snake['apple'])
+    drawScore(snake['score'])
+    pygame.display.update()
+    FPSCLOCK.tick(FPS)
+
+def drawWorm(wormCoords):
+    for coord in wormCoords:
+        x = coord['x'] * CELLSIZE
+        y = coord['y'] * CELLSIZE
+        wormSegmentRect = pygame.Rect(x, y, CELLSIZE, CELLSIZE)
+        pygame.draw.rect(DISPLAYSURF, DARKGREEN, wormSegmentRect)
+        wormInnerSegmentRect = pygame.Rect(x + 4, y + 4, CELLSIZE - 8, CELLSIZE - 8)
+        pygame.draw.rect(DISPLAYSURF, GREEN, wormInnerSegmentRect)
         pygame.display.update()
         FPSCLOCK.tick(FPS)
+
+def terminate():
+    pygame.quit()
+    exit()
 
 def drawPressKeyMsg():
     pressKeySurf = BASICFONT.render('Press a key to play.', True, DARKGRAY)
@@ -137,15 +201,6 @@ def showStartScreen():
         degrees2 += 7 # rotate by 7 degrees each frame
 
 
-def terminate():
-    pygame.quit()
-    sys.exit()
-
-
-def getRandomLocation():
-    return {'x': random.randint(0, CELLWIDTH - 1), 'y': random.randint(0, CELLHEIGHT - 1)}
-
-
 def showGameOverScreen():
     gameOverFont = pygame.font.Font('freesansbold.ttf', 150)
     gameSurf = gameOverFont.render('Game', True, WHITE)
@@ -172,16 +227,6 @@ def drawScore(score):
     scoreRect = scoreSurf.get_rect()
     scoreRect.topleft = (WINDOWWIDTH - 120, 10)
     DISPLAYSURF.blit(scoreSurf, scoreRect)
-
-
-def drawWorm(wormCoords):
-    for coord in wormCoords:
-        x = coord['x'] * CELLSIZE
-        y = coord['y'] * CELLSIZE
-        wormSegmentRect = pygame.Rect(x, y, CELLSIZE, CELLSIZE)
-        pygame.draw.rect(DISPLAYSURF, DARKGREEN, wormSegmentRect)
-        wormInnerSegmentRect = pygame.Rect(x + 4, y + 4, CELLSIZE - 8, CELLSIZE - 8)
-        pygame.draw.rect(DISPLAYSURF, GREEN, wormInnerSegmentRect)
 
 
 def drawApple(coord):
