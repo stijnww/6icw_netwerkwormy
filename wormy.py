@@ -18,39 +18,40 @@ assert WINDOWHEIGHT % CELLSIZE == 0, "Window height must be a multiple of cell s
 CELLWIDTH = int(WINDOWWIDTH / CELLSIZE)
 CELLHEIGHT = int(WINDOWHEIGHT / CELLSIZE)
 
-#             R    G    B
-WHITE     = (255, 255, 255)
-BLACK     = (  0,   0,   0)
-DARKGRAY  = ( 40,  40,  40)
-DARKGREEN = (  0, 155,   0)
+#               R    G    B
+WHITE       = (255, 255, 255)
+BLACK       = (  0,   0,   0)
+DARKGRAY    = ( 40,  40,  40)
+DARKGREEN   = (  0, 155,   0)
+
 # WORM COLORS FOR MULTIPLAYER
-RED       = (255,   0,   0)
-INNERRED  = (139,   0,   0)
-GREEN     = (  0, 255,   0)
-INNERGREEN = (  0, 139,   0)
-ORANGE   = (255, 165,   0)
-INNERORANGE = (255, 140, 0)
-YELLOW    = (255, 255,   0)
-INNERYELLOW = (200, 200, 0)
-PURPLE = (128, 0, 128)
-INNERPURPLE = (75, 0, 130)
-CYAN = (0, 255, 255)
-INNERCYAN = (0, 139, 139)
-PINK = (255, 192, 203)
-INNERPINK = (199, 21, 133)
-BLUE = (0, 0, 255)
-INNERBLUE = (0, 0, 139)
+RED         = (255,   0,   0)
+INNERRED    = (139,   0,   0)
+GREEN       = (  0, 255,   0)
+INNERGREEN  = (  0, 139,   0)
+ORANGE      = (255, 165,   0)
+INNERORANGE = (255, 140,   0)
+YELLOW      = (255, 255,   0)
+INNERYELLOW = (200, 200,   0)
+PURPLE      = (128,   0, 128)
+INNERPURPLE = ( 75,   0, 130)
+CYAN        = (  0, 255, 255)
+INNERCYAN   = (  0, 139, 139)
+PINK        = (255, 192, 203)
+INNERPINK   = (199,  21, 133)
+BLUE        = (  0,   0, 255)
+INNERBLUE   = (  0,   0, 139)
 
 wormColors = [GREEN, RED, ORANGE, YELLOW, PURPLE, CYAN, PINK, BLUE]
 
 BGCOLOR = BLACK
 
-UP = 0
-DOWN = 1
-LEFT = 2
-RIGHT = 3
+UP      = 0
+DOWN    = 1
+LEFT    = 2
+RIGHT   = 3
 
-HEAD = 0 # syntactic sugar: index of the worm's head
+HEAD    = 0 # syntactic sugar: index of the worm's head
 
 game_started = False
 
@@ -71,7 +72,6 @@ def main():
     server_thread = threading.Thread(target=start_server)
     server_thread.start()  # Start the server in a separate thread
     showHostPauseScreen(game_code)
-
 
 def runGame(s):
     global snakes
