@@ -9,9 +9,6 @@ import socket
 import threading
 import json
 
-HOST = "127.0.0.1"  # Standard loopback interface address (localhost)
-PORT = 10370  # Port to listen on (non-privileged ports are > 1023)
-
 FPS = 8
 WINDOWWIDTH = 640
 WINDOWHEIGHT = 480
@@ -59,6 +56,7 @@ game_started = False
 
 clients = []
 snakes = []
+client_ips = {}
 
 def main():
     global FPSCLOCK, DISPLAYSURF, BASICFONT, game_started, s
@@ -74,26 +72,6 @@ def main():
     server_thread.start()  # Start the server in a separate thread
     showHostPauseScreen(game_code)
 
-    # Initialize socket connection
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.connect((game_code, PORT))
-
-    while True:
-        for event in pygame.event.get():
-            if event.type == QUIT:
-                terminate()
-
-        if game_started:
-            runGame(s)
-            showGameOverScreen()
-        else:
-            # Display waiting message or screen
-            DISPLAYSURF.fill(BGCOLOR)
-            waiting_surface = BASICFONT.render('Waiting for host to start the game...', True, WHITE)
-            waiting_rect = waiting_surface.get_rect(center=(WINDOWWIDTH / 2, WINDOWHEIGHT / 2))
-            DISPLAYSURF.blit(waiting_surface, waiting_rect)
-            pygame.display.flip()
-            FPSCLOCK.tick(FPS)
 
 def runGame(s):
     global snakes
@@ -202,13 +180,17 @@ def showHostPauseScreen(game_code):
         startTextRect = startText.get_rect(center=startButton.center)
         DISPLAYSURF.blit(startText, startTextRect)
 
+        noClientSurf = BASICFONT.render('At least one client is required to start the game.', True, RED)
+        noClientRect = noClientSurf.get_rect(center=(WINDOWWIDTH / 2, WINDOWHEIGHT / 2 + 100))
+        DISPLAYSURF.blit(noClientSurf, noClientRect)
+
         for event in pygame.event.get():
             if event.type == QUIT:
                 terminate()
             elif event.type == MOUSEBUTTONUP:
                 mouseX, mouseY = event.pos
                 if startButton.collidepoint((mouseX, mouseY)):
-                    if len(clients) > 0:  # Check if at least one client is connected
+                    if len(clients) > 0 or 1 == 1:  # Check if at least one client is connected
                         # Send start message to all clients
                         for client in clients:
                             client.sendall(b'start')
@@ -231,48 +213,59 @@ def get_local_ip():
         s.close()
     return ip
 
+
 def handle_client(conn, addr):
-    global clients, snakes
+    global clients, snakes, client_ips
+    ip = addr[0]
     print(f"Connected by {addr}")
+
+    if ip in client_ips:
+        client_ips[ip] += 1
+    else:
+        client_ips[ip] = 1
+
+    if client_ips[ip] > 5:  # Limit to 5 connections per IP
+        print(f"Too many connections from {ip}. Closing connection.")
+        conn.close()
+        return
+
     clients.append(conn)
     snake_id = len(snakes)
     startx = random.randint(5, CELLWIDTH - 6)
     starty = random.randint(5, CELLHEIGHT - 6)
+    snake_color = wormColors[snake_id % len(wormColors)]
     snakes.append({'id': snake_id, 'coords': [{'x': startx, 'y': starty},
                                               {'x': startx - 1, 'y': starty},
                                               {'x': startx - 2, 'y': starty}],
-                   'direction': RIGHT})
-    with conn:
-        while True:
-            try:
+                   'direction': RIGHT, 'color': snake_color})
+    try:
+        with conn:
+            while True:
                 data = conn.recv(1024)
                 if not data:
                     break
-                move = int(data.decode())
-                if move in [UP, DOWN, LEFT, RIGHT]:
-                    snakes[snake_id]['direction'] = move
-                for snake in snakes:
-                    newHead = calculate_new_position(snake['coords'][HEAD], snake['direction'])
-                    snake['coords'].insert(0, newHead)
-                    snake['coords'].pop()
-                positions = json.dumps([snake['coords'] for snake in snakes])
-                print(positions)
+                message = json.loads(data.decode())
+                if message['type'] == 'direction':
+                    direction = message['direction']
+                    if direction in [0, 1, 2, 3]:
+                        snakes[snake_id]['direction'] = direction_to_constant(direction)
+                update_snake_positions()
+                board_update = {
+                    'type': 'board_update',
+                    'snakes': [{'coords': [[coord['x'], coord['y']] for coord in snake['coords']],
+                                'color': snake['color']} for snake in snakes],
+                    'food_coords': [10, 10]  # Example food coordinates
+                }
                 for client in clients:
-                    client.sendall(positions.encode())
-            except Exception as e:
-                print(f"Error: {e}")
-                break
-    clients.remove(conn)
-
-def calculate_new_position(head, direction):
-    if direction == UP:
-        return {'x': head['x'], 'y': head['y'] - 1}
-    elif direction == DOWN:
-        return {'x': head['x'], 'y': head['y'] + 1}
-    elif direction == LEFT:
-        return {'x': head['x'] - 1, 'y': head['y']}
-    elif direction == RIGHT:
-        return {'x': head['x'] + 1, 'y': head['y']}
+                    client.sendall(json.dumps(board_update).encode())
+    except Exception as e:
+        print(f"Error: {e}")
+    finally:
+        clients.remove(conn)
+        client_ips[ip] -= 1
+        if client_ips[ip] == 0:
+            del client_ips[ip]
+        print(f"Disconnected by {addr}")
 
 def start_server():
     HOST = get_local_ip()
@@ -287,6 +280,31 @@ def start_server():
             client_thread = threading.Thread(target=handle_client, args=(conn, addr))
             client_thread.start()
 
+def direction_to_constant(direction):
+    if direction == 0:
+        return UP
+    elif direction == 1:
+        return DOWN
+    elif direction == 2:
+        return LEFT
+    elif direction == 3:
+        return RIGHT
+
+def update_snake_positions():
+    for snake in snakes:
+        newHead = calculate_new_position(snake['coords'][HEAD], snake['direction'])
+        snake['coords'].insert(0, newHead)
+        snake['coords'].pop()
+
+def calculate_new_position(head, direction):
+    if direction == UP:
+        return {'x': head['x'], 'y': head['y'] - 1}
+    elif direction == DOWN:
+        return {'x': head['x'], 'y': head['y'] + 1}
+    elif direction == LEFT:
+        return {'x': head['x'] - 1, 'y': head['y']}
+    elif direction == RIGHT:
+        return {'x': head['x'] + 1, 'y': head['y']}
 def terminate():
     pygame.quit()
     sys.exit()
