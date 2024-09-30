@@ -18,39 +18,40 @@ assert WINDOWHEIGHT % CELLSIZE == 0, "Window height must be a multiple of cell s
 CELLWIDTH = int(WINDOWWIDTH / CELLSIZE)
 CELLHEIGHT = int(WINDOWHEIGHT / CELLSIZE)
 
-#             R    G    B
-WHITE     = (255, 255, 255)
-BLACK     = (  0,   0,   0)
-DARKGRAY  = ( 40,  40,  40)
-DARKGREEN = (  0, 155,   0)
+#               R    G    B
+WHITE       = (255, 255, 255)
+BLACK       = (  0,   0,   0)
+DARKGRAY    = ( 40,  40,  40)
+DARKGREEN   = (  0, 155,   0)
+
 # WORM COLORS FOR MULTIPLAYER
-RED       = (255,   0,   0)
-INNERRED  = (139,   0,   0)
-GREEN     = (  0, 255,   0)
-INNERGREEN = (  0, 139,   0)
-ORANGE   = (255, 165,   0)
-INNERORANGE = (255, 140, 0)
-YELLOW    = (255, 255,   0)
-INNERYELLOW = (200, 200, 0)
-PURPLE = (128, 0, 128)
-INNERPURPLE = (75, 0, 130)
-CYAN = (0, 255, 255)
-INNERCYAN = (0, 139, 139)
-PINK = (255, 192, 203)
-INNERPINK = (199, 21, 133)
-BLUE = (0, 0, 255)
-INNERBLUE = (0, 0, 139)
+RED         = (255,   0,   0)
+INNERRED    = (139,   0,   0)
+GREEN       = (  0, 255,   0)
+INNERGREEN  = (  0, 139,   0)
+ORANGE      = (255, 165,   0)
+INNERORANGE = (255, 140,   0)
+YELLOW      = (255, 255,   0)
+INNERYELLOW = (200, 200,   0)
+PURPLE      = (128,   0, 128)
+INNERPURPLE = ( 75,   0, 130)
+CYAN        = (  0, 255, 255)
+INNERCYAN   = (  0, 139, 139)
+PINK        = (255, 192, 203)
+INNERPINK   = (199,  21, 133)
+BLUE        = (  0,   0, 255)
+INNERBLUE   = (  0,   0, 139)
 
 wormColors = [GREEN, RED, ORANGE, YELLOW, PURPLE, CYAN, PINK, BLUE]
 
 BGCOLOR = BLACK
 
-UP = 0
-DOWN = 1
-LEFT = 2
-RIGHT = 3
+UP      = 0
+DOWN    = 1
+LEFT    = 2
+RIGHT   = 3
 
-HEAD = 0 # syntactic sugar: index of the worm's head
+HEAD    = 0 # syntactic sugar: index of the worm's head
 
 game_started = False
 
@@ -68,10 +69,10 @@ def main():
     pygame.display.set_caption('Wormy')
 
     game_code = get_local_ip()
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_thread = threading.Thread(target=start_server)
     server_thread.start()  # Start the server in a separate thread
     showHostPauseScreen(game_code)
-
 
 def runGame(s):
     global snakes
@@ -116,6 +117,7 @@ def runGame(s):
 def send_move(s, snake_id, move):
     move_data = {'id': snake_id, 'move': move}
     s.sendall(json.dumps(move_data).encode())
+
 def drawPressKeyMsg():
     pressKeySurf = BASICFONT.render('Press a key to play.', True, DARKGRAY)
     pressKeyRect = pressKeySurf.get_rect()
@@ -163,7 +165,7 @@ def showStartScreen():
         degrees2 += 7  # rotate by 7 degrees each frame
 
 def showHostPauseScreen(game_code):
-    global clients, game_started
+    global clients, game_started, s
     titleFont = pygame.font.Font('freesansbold.ttf', 50)
     titleSurf = titleFont.render('Game Code: ' + game_code, True, WHITE)
     titleRect = titleSurf.get_rect()
@@ -197,7 +199,7 @@ def showHostPauseScreen(game_code):
                             client.sendall(start_message)
                             print("Sent start message to client")
                         game_started = True  # Set game_started to True for the host
-                        runGame(s)  # Start the game
+                        runGame(s)  # Start the game and pass the socket
                         return
                     else:
                         print("No clients connected")
@@ -260,7 +262,12 @@ def handle_client(conn, addr):
                     'food_coords': [10, 10]  # Example food coordinates
                 }
                 for client in clients:
-                    client.sendall(json.dumps(board_update).encode())
+                    try:
+                        client.sendall(json.dumps(board_update).encode())
+                    except Exception as e:
+                        print(f"Error sending data to client: {e}")
+                        clients.remove(client)
+                        client.close()
     except Exception as e:
         print(f"Error: {e}")
     finally:
@@ -292,6 +299,7 @@ def direction_to_constant(direction):
         return LEFT
     elif direction == 3:
         return RIGHT
+
 
 def update_snake_positions():
     for snake in snakes:
