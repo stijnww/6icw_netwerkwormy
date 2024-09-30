@@ -190,11 +190,14 @@ def showHostPauseScreen(game_code):
             elif event.type == MOUSEBUTTONUP:
                 mouseX, mouseY = event.pos
                 if startButton.collidepoint((mouseX, mouseY)):
-                    if len(clients) > 0 or 1 == 1:  # Check if at least one client is connected
+                    if len(clients) > 0:  # Check if at least one client is connected
                         # Send start message to all clients
                         for client in clients:
-                            client.sendall(b'start')
+                            start_message = json.dumps({"type": "start"}).encode()
+                            client.sendall(start_message)
+                            print("Sent start message to client")
                         game_started = True  # Set game_started to True for the host
+                        runGame(s)  # Start the game
                         return
                     else:
                         print("No clients connected")
