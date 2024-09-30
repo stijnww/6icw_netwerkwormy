@@ -53,9 +53,8 @@ def main():
     BASICFONT = pygame.font.Font('freesansbold.ttf', 18)
     pygame.display.set_caption('Wormy')
 
-    showStartScreen()
-    while True:
-        runGame()
+    waitForStart()
+    runGame()
 
 def runGame():
     
@@ -63,35 +62,38 @@ def runGame():
     direction = RIGHT
     running = True
 
-    direction_queue = queue.Queue()
-    update_queue = queue.Queue()
-
     def send_direction():
         while running:
-            try:
-                direction = direction_queue.get(timeout=1)
-                message = {
-                    "type": "direction",
-                    "direction": direction
-                }
-                s.sendall(json.dumps(message).encode())
-            except queue.Empty:
-                continue
+            for event in pygame.event.get():
+                if event.type == KEYDOWN:
+                    if event.key == K_w:
+                        direction = UP
+                    elif event.key == K_a:
+                        direction = LEFT
+                    elif event.key == K_s:
+                        direction = DOWN
+                    elif event.key == K_d:
+                        direction = RIGHT
+                    s.sendall(json.dumps({'type': 'direction', 'direction': direction}).encode())
 
-        def receive_updates():
-            while running:
-                try:
-                    data = s.recv(1024)
-                    if not data:
-                        break
-                    message = json.loads(data.decode())
-                    if message['type'] == 'board_update':
-                        snakes = message['snakes']
-                except socket.timeout:
+    def receive_updates():
+        while running:
+            try:
+                data = s.recv(1024)
+                if not data:
                     continue
-                except Exception as e:
-                    print(f"Error: {e}")
-                    break
+                message = json.loads(data.decode())
+                if message['type'] == 'board_update':
+                    snakes = message['snakes']
+                    for snake in snakes:
+                        wormCoords = snake['coords']
+                        drawWorm(wormCoords)
+            except socket.timeout:
+                print("Timeout")
+                continue
+            except Exception as e:
+                print(f"Error: {e}")
+                break
 
 
         send_thread = threading.Thread(target=send_direction)
@@ -99,32 +101,7 @@ def runGame():
 
         send_thread.start()
         receive_thread.start()
-
-        while running:
-            for event in pygame.event.get():  # event handling loop
-                if event.type == pygame.QUIT:
-                    running = False
-                    terminate()
-                elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_LEFT:
-                        direction = LEFT
-                    elif event.key == pygame.K_RIGHT:
-                        direction = RIGHT
-                    elif event.key == pygame.K_UP:
-                        direction = UP
-                    elif event.key == pygame.K_DOWN:
-                        direction = DOWN
-                    direction_queue.put(direction)
-
-            try:
-                snakes = update_queue.get_nowait()
-            except queue.Empty:
-                pass
             
-        for snake in snakes:
-            wormCoords = snake['coords']
-            drawWorm(wormCoords)
-
         send_thread.join()
         receive_thread.join()
 
@@ -159,18 +136,6 @@ def drawPressKeyMsg():
     DISPLAYSURF.blit(pressKeySurf, pressKeyRect)
 
 
-def checkForKeyPress():
-    if len(pygame.event.get(QUIT)) > 0:
-        terminate()
-
-    keyUpEvents = pygame.event.get(KEYUP)
-    if len(keyUpEvents) == 0:
-        return None
-    if keyUpEvents[0].key == K_ESCAPE:
-        terminate()
-    return keyUpEvents[0].key
-
-
 def showStartScreen():
     titleFont = pygame.font.Font('freesansbold.ttf', 100)
     titleSurf1 = titleFont.render('Wormy!', True, WHITE, DARKGREEN)
@@ -192,7 +157,7 @@ def showStartScreen():
 
         drawPressKeyMsg()
 
-        if checkForKeyPress():
+        if waitForStart():
             pygame.event.get() # clear event queue
             return
         pygame.display.update()
@@ -200,27 +165,43 @@ def showStartScreen():
         degrees1 += 3 # rotate by 3 degrees each frame
         degrees2 += 7 # rotate by 7 degrees each frame
 
-
-def showGameOverScreen():
-    gameOverFont = pygame.font.Font('freesansbold.ttf', 150)
-    gameSurf = gameOverFont.render('Game', True, WHITE)
-    overSurf = gameOverFont.render('Over', True, WHITE)
-    gameRect = gameSurf.get_rect()
-    overRect = overSurf.get_rect()
-    gameRect.midtop = (WINDOWWIDTH / 2, 10)
-    overRect.midtop = (WINDOWWIDTH / 2, gameRect.height + 10 + 25)
-
-    DISPLAYSURF.blit(gameSurf, gameRect)
-    DISPLAYSURF.blit(overSurf, overRect)
-    drawPressKeyMsg()
-    pygame.display.update()
-    pygame.time.wait(500)
-    checkForKeyPress() # clear out any key presses in the event queue
-
+def waitForStart():
     while True:
-        if checkForKeyPress():
-            pygame.event.get() # clear event queue
-            return
+        try:
+            data = s.recv(1024)
+            if not data:
+                continue
+            message = json.loads(data.decode())
+            if message['type'] == 'start':
+                print("Game starting")
+                return True
+        except socket.timeout:
+            continue
+        except Exception as e:
+            print(f"Error: {e}")
+            break
+
+
+# def showGameOverScreen():
+#     gameOverFont = pygame.font.Font('freesansbold.ttf', 150)
+#     gameSurf = gameOverFont.render('Game', True, WHITE)
+#     overSurf = gameOverFont.render('Over', True, WHITE)
+#     gameRect = gameSurf.get_rect()
+#     overRect = overSurf.get_rect()
+#     gameRect.midtop = (WINDOWWIDTH / 2, 10)
+#     overRect.midtop = (WINDOWWIDTH / 2, gameRect.height + 10 + 25)
+
+#     DISPLAYSURF.blit(gameSurf, gameRect)
+#     DISPLAYSURF.blit(overSurf, overRect)
+#     drawPressKeyMsg()
+#     pygame.display.update()
+#     pygame.time.wait(500)
+#     checkForKeyPress() # clear out any key presses in the event queue
+
+#     while True:
+#         if checkForKeyPress():
+#             pygame.event.get() # clear event queue
+#             return
 
 def drawScore(score):
     scoreSurf = BASICFONT.render('Score: %s' % (score), True, WHITE)
@@ -245,3 +226,4 @@ def drawGrid():
 
 if __name__ == '__main__':
     main()
+    print("Game over")
