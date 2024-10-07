@@ -57,7 +57,6 @@ def main():
     runGame()
 
 def runGame():
-    
     snakes = []
     direction = RIGHT
     running = True
@@ -78,11 +77,14 @@ def runGame():
 
     def receive_updates():
         while running:
+            print("Receiving updates")
             try:
                 data = s.recv(1024)
                 if not data:
+                    print("No data")
                     continue
                 message = json.loads(data.decode())
+                print(f"Received message: {message}")
                 if message['type'] == 'board_update':
                     snakes = message['snakes']
                     for snake in snakes:
@@ -95,15 +97,14 @@ def runGame():
                 print(f"Error: {e}")
                 break
 
+    send_thread = threading.Thread(target=send_direction)
+    receive_thread = threading.Thread(target=receive_updates)
 
-        send_thread = threading.Thread(target=send_direction)
-        receive_thread = threading.Thread(target=receive_updates)
-
-        send_thread.start()
-        receive_thread.start()
-            
-        send_thread.join()
-        receive_thread.join()
+    send_thread.start()
+    receive_thread.start()
+        
+    send_thread.join()
+    receive_thread.join()
 
 def updateBoard(snakes):
     for snake in snakes:
@@ -174,7 +175,7 @@ def waitForStart():
             message = json.loads(data.decode())
             if message['type'] == 'start':
                 print("Game starting")
-                return True
+                return
         except socket.timeout:
             continue
         except Exception as e:
