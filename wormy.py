@@ -8,6 +8,7 @@ from pygame.locals import *
 import socket
 import threading
 import json
+import logging
 
 FPS = 8
 WINDOWWIDTH = 640
@@ -58,9 +59,10 @@ game_started = False
 clients = []
 snakes = []
 client_ips = {}
+global socketConnection
 
 def main():
-    global FPSCLOCK, DISPLAYSURF, BASICFONT, game_started, s
+    global FPSCLOCK, DISPLAYSURF, BASICFONT, game_started, socketConnection
 
     pygame.init()
     FPSCLOCK = pygame.time.Clock()
@@ -69,12 +71,12 @@ def main():
     pygame.display.set_caption('Wormy')
 
     game_code = get_local_ip()
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    socketConnection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_thread = threading.Thread(target=start_server)
     server_thread.start()  # Start the server in a separate thread
     showHostPauseScreen(game_code)
 
-def runGame(s):
+def runGame(conn):
     global snakes
     snake_id = 0
     startx = random.randint(5, CELLWIDTH - 6)
@@ -90,18 +92,18 @@ def runGame(s):
                 terminate()
             elif event.type == KEYDOWN:
                 if (event.key == K_LEFT or event.key == K_a) and snakes[snake_id]['direction'] != RIGHT:
-                    send_move(s, snake_id, LEFT)
+                    send_move(conn, snake_id, LEFT)
                 elif (event.key == K_RIGHT or event.key == K_d) and snakes[snake_id]['direction'] != LEFT:
-                    send_move(s, snake_id, RIGHT)
+                    send_move(conn, snake_id, RIGHT)
                 elif (event.key == K_UP or event.key == K_w) and snakes[snake_id]['direction'] != DOWN:
-                    send_move(s, snake_id, UP)
+                    send_move(conn, snake_id, UP)
                 elif (event.key == K_DOWN or event.key == K_s) and snakes[snake_id]['direction'] != UP:
-                    send_move(s, snake_id, DOWN)
+                    send_move(conn, snake_id, DOWN)
                 elif event.key == K_ESCAPE:
                     terminate()
 
         try:
-            data = s.recv(1024)
+            data = conn.recv(1024)
             snakes = json.loads(data.decode())
         except Exception as e:
             print(f"Error: {e}")
@@ -114,9 +116,9 @@ def runGame(s):
         pygame.display.update()
         FPSCLOCK.tick(FPS)
 
-def send_move(s, snake_id, move):
+def send_move(conn, snake_id, move):
     move_data = {'id': snake_id, 'move': move}
-    s.sendall(json.dumps(move_data).encode())
+    conn.sendall(json.dumps(move_data).encode())
 
 def drawPressKeyMsg():
     pressKeySurf = BASICFONT.render('Press a key to play.', True, DARKGRAY)
@@ -165,7 +167,7 @@ def showStartScreen():
         degrees2 += 7  # rotate by 7 degrees each frame
 
 def showHostPauseScreen(game_code):
-    global clients, game_started, s
+    global clients, game_started
     titleFont = pygame.font.Font('freesansbold.ttf', 50)
     titleSurf = titleFont.render('Game Code: ' + game_code, True, WHITE)
     titleRect = titleSurf.get_rect()
@@ -199,7 +201,7 @@ def showHostPauseScreen(game_code):
                             client.sendall(start_message)
                             print("Sent start message to client")
                         game_started = True  # Set game_started to True for the host
-                        runGame(s)  # Start the game and pass the socket
+                        runGame(clients[0])  # Start the game and pass the first client connection
                         return
                     else:
                         print("No clients connected")
@@ -208,21 +210,24 @@ def showHostPauseScreen(game_code):
         FPSCLOCK.tick(FPS)
 
 def get_local_ip():
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    tempSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        s.connect(('10.254.254.254', 1))
-        ip = s.getsockname()[0]
+        tempSocket.connect(('10.254.254.254', 1))
+        ip = tempSocket.getsockname()[0]
     except Exception:
         ip = '127.0.0.1'
     finally:
-        s.close()
+        tempSocket.close()
     return ip
 
 
+# Configure logging
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+
 def handle_client(conn, addr):
-    global clients, snakes, client_ips
+    global clients, snakes, client_ips, socketConnection
     ip = addr[0]
-    print(f"Connected by {addr}")
+    logging.info(f"Connected by {addr}")
 
     if ip in client_ips:
         client_ips[ip] += 1
@@ -230,7 +235,7 @@ def handle_client(conn, addr):
         client_ips[ip] = 1
 
     if client_ips[ip] > 5:  # Limit to 5 connections per IP
-        print(f"Too many connections from {ip}. Closing connection.")
+        logging.warning(f"Too many connections from {ip}. Closing connection.")
         conn.close()
         return
 
@@ -243,10 +248,12 @@ def handle_client(conn, addr):
                                               {'x': startx - 1, 'y': starty},
                                               {'x': startx - 2, 'y': starty}],
                    'direction': RIGHT, 'color': snake_color})
+    logging.info(f"Snakes: {snakes}")
     try:
         with conn:
             while True:
                 data = conn.recv(1024)
+                logging.info(f"Received data: {data}")
                 if not data:
                     break
                 message = json.loads(data.decode())
@@ -257,7 +264,7 @@ def handle_client(conn, addr):
                 update_snake_positions()
                 board_update = {
                     'type': 'board_update',
-                    'snakes': [{'coords': [[coord['x'], coord['y']] for coord in snake['coords']],
+                    'snakes': [{'coords': [[coord['x'], 'y'] for coord in snake['coords']],
                                 'color': snake['color']} for snake in snakes],
                     'food_coords': [10, 10]  # Example food coordinates
                 }
@@ -265,28 +272,28 @@ def handle_client(conn, addr):
                     try:
                         client.sendall(json.dumps(board_update).encode())
                     except Exception as e:
-                        print(f"Error sending data to client: {e}")
+                        logging.error(f"Error sending data to client: {e}")
                         clients.remove(client)
                         client.close()
     except Exception as e:
-        print(f"Error: {e}")
+        logging.error(f"Error: {e}")
     finally:
         clients.remove(conn)
         client_ips[ip] -= 1
         if client_ips[ip] == 0:
             del client_ips[ip]
-        print(f"Disconnected by {addr}")
+        logging.info(f"Disconnected by {addr}")
 
 def start_server():
     HOST = get_local_ip()
     PORT = 65432
     print(f"Server IP: {HOST}")
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind((HOST, PORT))
-        s.listen()
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as serverSocket:
+        serverSocket.bind((HOST, PORT))
+        serverSocket.listen()
         print(f"Server listening on {HOST}:{PORT}")
         while True:
-            conn, addr = s.accept()
+            conn, addr = serverSocket.accept()
             client_thread = threading.Thread(target=handle_client, args=(conn, addr))
             client_thread.start()
 
