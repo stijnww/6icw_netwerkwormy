@@ -10,9 +10,9 @@ import threading
 import json
 import logging
 
-FPS = 8
-WINDOWWIDTH = 640
-WINDOWHEIGHT = 480
+FPS = 10
+WINDOWWIDTH = 1600
+WINDOWHEIGHT = 900
 CELLSIZE = 20
 assert WINDOWWIDTH % CELLSIZE == 0, "Window width must be a multiple of cell size."
 assert WINDOWHEIGHT % CELLSIZE == 0, "Window height must be a multiple of cell size."
@@ -76,16 +76,8 @@ def main():
     server_thread.start()  # Start the server in a separate thread
     showHostPauseScreen(game_code)
 
-def runGame(conn):
-    global snakes
-    snake_id = 0
-    startx = random.randint(5, CELLWIDTH - 6)
-    starty = random.randint(5, CELLHEIGHT - 6)
-    snakes = [{'id': snake_id, 'coords': [{'x': startx, 'y': starty},
-                                          {'x': startx - 1, 'y': starty},
-                                          {'x': startx - 2, 'y': starty}],
-               'direction': RIGHT}]
-
+def runGame(conn, snake_id):
+    global snakes, clients
     while True:
         for event in pygame.event.get():
             if event.type == QUIT:
@@ -102,23 +94,42 @@ def runGame(conn):
                 elif event.key == K_ESCAPE:
                     terminate()
 
-        try:
-            data = conn.recv(1024)
-            snakes = json.loads(data.decode())
-        except Exception as e:
-            print(f"Error: {e}")
-            terminate()
+        # Update snake positions every frame
+        update_snake_positions()
+
+        # Send game update to all clients
+        game_update = {
+            'type': 'board_update',
+            'snakes': [
+                {
+                    'coords': [[coord['x'], coord['y']] for coord in snake['coords']],
+                    'color': snake['color'],
+                    'direction': snake['direction']
+                } for snake in snakes
+            ]
+        }
+        for client in clients:
+            try:
+                client.sendall(json.dumps(game_update).encode())
+                #logging.info(f"Sent game update to client {clients.index(client)}")
+                #logging.info(f"Game update: {game_update}")
+            except Exception as e:
+                logging.error(f"Error sending data to client: {e}")
+                clients.remove(client)
+                client.close()
 
         DISPLAYSURF.fill(BGCOLOR)
         drawGrid()
         for snake in snakes:
-            drawWorm(snake)
+            drawWorm(snake['coords'], snake['color'])
         pygame.display.update()
         FPSCLOCK.tick(FPS)
 
 def send_move(conn, snake_id, move):
     move_data = {'id': snake_id, 'move': move}
     conn.sendall(json.dumps(move_data).encode())
+    logging.info(f"Sent move to client {snake_id}")
+    logging.info(f"Move data: {move_data}")
 
 def drawPressKeyMsg():
     pressKeySurf = BASICFONT.render('Press a key to play.', True, DARKGRAY)
@@ -195,13 +206,30 @@ def showHostPauseScreen(game_code):
                 mouseX, mouseY = event.pos
                 if startButton.collidepoint((mouseX, mouseY)):
                     if len(clients) > 0:  # Check if at least one client is connected
+                        # Define start positions for each side of the screen
+                        start_positions = [
+                            [(5, 5), (5, 6), (5, 7)],  # Top-left
+                            [(CELLWIDTH - 6, 5), (CELLWIDTH - 7, 5), (CELLWIDTH - 8, 5)],  # Top-right
+                            [(5, CELLHEIGHT - 6), (5, CELLHEIGHT - 7), (5, CELLHEIGHT - 8)],  # Bottom-left
+                            [(CELLWIDTH - 6, CELLHEIGHT - 6), (CELLWIDTH - 7, CELLHEIGHT - 6), (CELLWIDTH - 8, CELLHEIGHT - 6)]  # Bottom-right
+                        ]
+
                         # Send start message to all clients
-                        for client in clients:
-                            start_message = json.dumps({"type": "start"}).encode()
+                        for i, client in enumerate(clients):
+                            snake_coords = [{'x': x, 'y': y} for x, y in start_positions[i % len(start_positions)]]
+                            snake_color = wormColors[i % len(wormColors)]
+                            start_message = json.dumps({
+                                "type": "start",
+                                "coords": {
+                                    "coords": [[coord['x'], coord['y']] for coord in snake_coords],
+                                    "color": snake_color
+                                }
+                            }).encode()
                             client.sendall(start_message)
-                            print("Sent start message to client")
+                            print(f"Sent start message to client {i}")
+                            snakes.append({'id': i, 'coords': snake_coords, 'direction': RIGHT, 'color': snake_color})
                         game_started = True  # Set game_started to True for the host
-                        runGame(clients[0])  # Start the game and pass the first client connection
+                        runGame(clients[0], 0)  # Start the game and pass the first client connection and snake_id
                         return
                     else:
                         print("No clients connected")
@@ -225,7 +253,7 @@ def get_local_ip():
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def handle_client(conn, addr):
-    global clients, snakes, client_ips, socketConnection
+    global clients, snakes, client_ips
     ip = addr[0]
     logging.info(f"Connected by {addr}")
 
@@ -257,24 +285,10 @@ def handle_client(conn, addr):
                 if not data:
                     break
                 message = json.loads(data.decode())
-                if message['type'] == 'direction':
-                    direction = message['direction']
-                    if direction in [0, 1, 2, 3]:
-                        snakes[snake_id]['direction'] = direction_to_constant(direction)
-                update_snake_positions()
-                board_update = {
-                    'type': 'board_update',
-                    'snakes': [{'coords': [[coord['x'], 'y'] for coord in snake['coords']],
-                                'color': snake['color']} for snake in snakes],
-                    'food_coords': [10, 10]  # Example food coordinates
-                }
-                for client in clients:
-                    try:
-                        client.sendall(json.dumps(board_update).encode())
-                    except Exception as e:
-                        logging.error(f"Error sending data to client: {e}")
-                        clients.remove(client)
-                        client.close()
+                if 'move' in message:
+                    direction = message['move']
+                    if direction in [UP, DOWN, LEFT, RIGHT]:
+                        snakes[snake_id]['direction'] = direction
     except Exception as e:
         logging.error(f"Error: {e}")
     finally:
@@ -323,6 +337,7 @@ def calculate_new_position(head, direction):
         return {'x': head['x'] - 1, 'y': head['y']}
     elif direction == RIGHT:
         return {'x': head['x'] + 1, 'y': head['y']}
+
 def terminate():
     pygame.quit()
     sys.exit()
