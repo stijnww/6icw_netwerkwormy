@@ -85,12 +85,16 @@ def runGame(conn, snake_id):
             elif event.type == KEYDOWN:
                 if (event.key == K_LEFT or event.key == K_a) and snakes[snake_id]['direction'] != RIGHT:
                     send_move(conn, snake_id, LEFT)
+                    print("Sent move left")
                 elif (event.key == K_RIGHT or event.key == K_d) and snakes[snake_id]['direction'] != LEFT:
                     send_move(conn, snake_id, RIGHT)
+                    print("Sent move right")
                 elif (event.key == K_UP or event.key == K_w) and snakes[snake_id]['direction'] != DOWN:
                     send_move(conn, snake_id, UP)
+                    print("Sent move up")
                 elif (event.key == K_DOWN or event.key == K_s) and snakes[snake_id]['direction'] != UP:
                     send_move(conn, snake_id, DOWN)
+                    print("Sent move down")
                 elif event.key == K_ESCAPE:
                     terminate()
 
