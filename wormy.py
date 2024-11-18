@@ -196,10 +196,8 @@ def showHostPauseScreen(game_code):
                     if len(clients) > 0:  # Check if at least one client is connected
                         # Define start positions for each side of the screen
                         start_positions = [
-                            [(CELLWIDTH + 8, 5), (7, 6), (5, 7)],  # Top-left
-                            [(CELLWIDTH - 8, 5), (7, 6), (5, 7)],  # Top-right
-                            [(5, CELLHEIGHT - 6), (5, CELLHEIGHT - 7), (5, CELLHEIGHT - 8)],  # Bottom-left
-                            [(CELLWIDTH - 6, CELLHEIGHT - 6), (CELLWIDTH - 7, CELLHEIGHT - 6), (CELLWIDTH - 8, CELLHEIGHT - 6)]  # Bottom-right
+                            [(5, 5), (5, 6), (5, 7)],  # Top-left
+                            [(5, 5), (5, 6), (5, 7)],  # Top-left again
                         ]
 
                         # Send start message to all clients
