@@ -59,6 +59,7 @@ game_started = False
 clients = []
 snakes = []
 client_ips = {}
+inputQueue = []
 global socketConnection
 
 def main():
@@ -197,7 +198,8 @@ def showHostPauseScreen(game_code):
                         # Define start positions for each side of the screen
                         start_positions = [
                             [(5, 5), (5, 6), (5, 7)],  # Top-left
-                            [(5, 5), (5, 6), (5, 7)],  # Top-left again
+                            [(5, 20), (5, 21), (5, 22)],  # middle-left
+                            [(5, 40), (5, 21), (5, 22)],  # Bottom-left
                         ]
 
                         # Send start message to all clients
@@ -240,7 +242,7 @@ def get_local_ip():
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def handle_client(conn, addr):
-    global clients, snakes, client_ips
+    global clients, snakes, client_ips, inputQueue
     ip = addr[0]
     logging.info(f"Connected by {addr}")
 
@@ -262,7 +264,7 @@ def handle_client(conn, addr):
     try:
         with conn:
             while True:
-                data = conn.recv(1024)
+                data = conn.recv(37)
                 logging.info(f"Received data: {data}")
                 if not data:
                     break
@@ -270,8 +272,8 @@ def handle_client(conn, addr):
                 if message["type"] == 'direction':
                     direction = int(message["direction"])
                     if direction in [UP, DOWN, LEFT, RIGHT]:
-                        snakes[snake_id]['direction'] = direction
-                        logging.info(f"Snake {snake_id} direction: {snakes[snake_id]['direction']}")
+                        # add direction to input queue
+                        inputQueue.append((snake_id, direction))
     except Exception as e:
         logging.error(f"Error: {e}")
     finally:
@@ -306,8 +308,39 @@ def direction_to_constant(direction):
 
 
 def update_snake_positions():
-    for snake in snakes:
+    global snakes, inputQueue
+    for snake in snakes[:]:  # Iterate over a copy of the list to allow removal
+        # Check for input queue
+        if len(inputQueue) > 0:
+            # Check if the input is for this snake
+            snake_id, direction = inputQueue.pop(0)
+            if snake_id == snake['id']:
+                # check if the move is valid
+                if snake['direction'] == UP and direction == DOWN:
+                    continue
+                elif snake['direction'] == DOWN and direction == UP:
+                    continue
+                elif snake['direction'] == LEFT and direction == RIGHT:
+                    continue
+                elif snake['direction'] == RIGHT and direction == LEFT:
+                    continue
+                snake['direction'] = direction_to_constant(direction)
+
+
         newHead = calculate_new_position(snake['coords'][HEAD], snake['direction'])
+
+        # Check for collision with boundaries
+        if newHead['x'] < 0 or newHead['x'] >= CELLWIDTH or newHead['y'] < 0 or newHead['y'] >= CELLHEIGHT:
+            print(f"Snake {snake['id']} collided with the boundary and will be removed.")
+            snakes.remove(snake)
+            continue
+
+        # Check for collision with itself
+        if newHead in snake['coords']:
+            print(f"Snake {snake['id']} collided with itself and will be removed.")
+            snakes.remove(snake)
+            continue
+
         snake['coords'].insert(0, newHead)
         snake['coords'].pop()
 
