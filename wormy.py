@@ -9,6 +9,7 @@ import socket
 import threading
 import json
 import logging
+import re
 
 FPS = 10
 WINDOWWIDTH = 1600
@@ -258,22 +259,35 @@ def handle_client(conn, addr):
 
     clients.append(conn)
     snake_id = len(snakes)
-    startx = random.randint(5, CELLWIDTH - 6)
-    starty = random.randint(5, CELLHEIGHT - 6)
     snake_color = wormColors[snake_id % len(wormColors)]
     try:
         with conn:
+            buffer = ""
             while True:
-                data = conn.recv(37)
-                logging.info(f"Received data: {data}")
+                data = conn.recv(1024).decode()
                 if not data:
                     break
-                message = json.loads(data.decode())
-                if message["type"] == 'direction':
-                    direction = int(message["direction"])
-                    if direction in [UP, DOWN, LEFT, RIGHT]:
-                        # add direction to input queue
-                        inputQueue.append((snake_id, direction))
+
+                buffer += data
+                json_objects = re.findall(r'\{.*?\}(?=\{)|\{.*?\}$', buffer)
+                buffer = re.sub(r'\{.*?\}(?=\{)|\{.*?\}$', '', buffer)
+                logging.info(f"Received JSON objects: {json_objects}")
+                # log how many json objects were received
+                logging.info(f"Received {len(json_objects)} JSON objects")
+
+                for msgData in json_objects:
+                    try:
+                        msgData = json.loads(msgData)
+                        if msgData["type"] == 'direction':
+                            direction = int(msgData["direction"])
+                            if direction in [UP, DOWN, LEFT, RIGHT]:
+                                # add direction to input queue
+                                inputQueue.append((snake_id, direction))
+                                logging.info(f"Added direction to input queue: {direction}")
+                    # exception with JSON parsing
+                    except Exception as e:
+                        logging.error(f"Error: {e}")
+    # exception with connection
     except Exception as e:
         logging.error(f"Error: {e}")
     finally:
