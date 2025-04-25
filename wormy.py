@@ -3,6 +3,10 @@
 # http://inventwithpython.com/pygame
 # Released under a "Simplified BSD" license
 
+# TODO HOST: meer spawn posities en directie bij deze spawns meegeven aan clients
+# TODO CLIENT: toon slangen op beeld
+
+
 import random, pygame, sys
 from pygame.locals import *
 import socket
@@ -90,23 +94,22 @@ def runGame(conn, snake_id):
 
         # Send game update to all clients
         game_update = {
-            'type': 'board_update',
-            'snakes': [
+            "type": "board_update",
+            "snakes": [
                 {
-                    'coords': [[coord['x'], coord['y']] for coord in snake['coords']],
-                    'color': snake['color'],
-                    'direction': snake['direction']
+                    "coords": [[coord['x'], coord['y']] for coord in snake['coords']],
+                    "color": snake['color'],
+                    "direction": snake['direction']
                 } for snake in snakes
             ]
         }
-        for client in clients:
+        for client, _ in clients:
             try:
                 client.sendall(json.dumps(game_update).encode())
-                logging.info(f"Sent game update to client {clients.index(client)}")
                 logging.info(f"Game update: {game_update}")
             except Exception as e:
                 logging.error(f"Error sending data to client: {e}")
-                clients.remove(client)
+                clients = [c for c in clients if c[0] != client]
                 client.close()
 
         DISPLAYSURF.fill(BGCOLOR)
@@ -119,7 +122,7 @@ def runGame(conn, snake_id):
 def send_move(conn, snake_id, move):
     move_data = {'id': snake_id, 'move': move}
     conn.sendall(json.dumps(move_data).encode())
-    logging.info(f"Sent move to client {snake_id}")
+    #logging.info(f"Sent move to client {snake_id}")
     logging.info(f"Move data: {move_data}")
 
 def drawPressKeyMsg():
@@ -204,7 +207,7 @@ def showHostPauseScreen(game_code):
                         ]
 
                         # Send start message to all clients
-                        for i, client in enumerate(clients):
+                        for i, (client, snake_id) in enumerate(clients):
                             print(f"Sending start message to client {i}")
                             snake_coords = [{'x': x, 'y': y} for x, y in start_positions[i % len(start_positions)]]
                             snake_color = wormColors[i % len(wormColors)]
@@ -219,7 +222,7 @@ def showHostPauseScreen(game_code):
                             print(f"Sent start message to client {i}")
                             snakes.append({'id': i, 'coords': snake_coords, 'direction': RIGHT, 'color': snake_color})
                         game_started = True  # Set game_started to True for the host
-                        runGame(clients[0], 0)  # Start the game and pass the first client connection and snake_id
+                        runGame(clients[0][0], 0)  # Start the game and pass the first client connection and snake_id
                         return
                     else:
                         print("No clients connected")
@@ -242,6 +245,7 @@ def get_local_ip():
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
+
 def handle_client(conn, addr):
     global clients, snakes, client_ips, inputQueue
     ip = addr[0]
@@ -257,8 +261,8 @@ def handle_client(conn, addr):
         conn.close()
         return
 
-    clients.append(conn)
-    snake_id = len(snakes)
+    snake_id = len(clients)
+    clients.append((conn, snake_id))
     snake_color = wormColors[snake_id % len(wormColors)]
     try:
         with conn:
@@ -271,9 +275,6 @@ def handle_client(conn, addr):
                 buffer += data
                 json_objects = re.findall(r'\{.*?\}(?=\{)|\{.*?\}$', buffer)
                 buffer = re.sub(r'\{.*?\}(?=\{)|\{.*?\}$', '', buffer)
-                logging.info(f"Received JSON objects: {json_objects}")
-                # log how many json objects were received
-                logging.info(f"Received {len(json_objects)} JSON objects")
 
                 for msgData in json_objects:
                     try:
@@ -281,17 +282,13 @@ def handle_client(conn, addr):
                         if msgData["type"] == 'direction':
                             direction = int(msgData["direction"])
                             if direction in [UP, DOWN, LEFT, RIGHT]:
-                                # add direction to input queue
                                 inputQueue.append((snake_id, direction))
-                                logging.info(f"Added direction to input queue: {direction}")
-                    # exception with JSON parsing
                     except Exception as e:
                         logging.error(f"Error: {e}")
-    # exception with connection
     except Exception as e:
         logging.error(f"Error: {e}")
     finally:
-        clients.remove(conn)
+        clients = [client for client in clients if client[0] != conn]
         client_ips[ip] -= 1
         if client_ips[ip] == 0:
             del client_ips[ip]
@@ -323,24 +320,22 @@ def direction_to_constant(direction):
 
 def update_snake_positions():
     global snakes, inputQueue
+    # Create a dictionary to store the latest valid direction for each snake
+    latest_directions = {snake['id']: snake['direction'] for snake in snakes}
+
+    while inputQueue:
+        snake_id, direction = inputQueue.pop(0)
+        if snake_id in latest_directions:
+            current_direction = latest_directions[snake_id]
+            # Check if the move is valid
+            if not ((current_direction == UP and direction == DOWN) or
+                    (current_direction == DOWN and direction == UP) or
+                    (current_direction == LEFT and direction == RIGHT) or
+                    (current_direction == RIGHT and direction == LEFT)):
+                latest_directions[snake_id] = direction_to_constant(direction)
+
     for snake in snakes[:]:  # Iterate over a copy of the list to allow removal
-        # Check for input queue
-        if len(inputQueue) > 0:
-            # Check if the input is for this snake
-            snake_id, direction = inputQueue.pop(0)
-            if snake_id == snake['id']:
-                # check if the move is valid
-                if snake['direction'] == UP and direction == DOWN:
-                    continue
-                elif snake['direction'] == DOWN and direction == UP:
-                    continue
-                elif snake['direction'] == LEFT and direction == RIGHT:
-                    continue
-                elif snake['direction'] == RIGHT and direction == LEFT:
-                    continue
-                snake['direction'] = direction_to_constant(direction)
-
-
+        snake['direction'] = latest_directions[snake['id']]
         newHead = calculate_new_position(snake['coords'][HEAD], snake['direction'])
 
         # Check for collision with boundaries
